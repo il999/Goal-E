@@ -1,86 +1,68 @@
 #include <AccelStepper.h>
 
-#define MOTOR_INTERFACE_TYPE AccelStepper::FULL4WIRE
+// --- SETTINGS ---
+// Start low (400-600) to test mechanical grip, then increase.
+float MAX_SPEED = 900.0; 
+float ACCEL = 8000.0;    // The "ramp" that prevents belt slipping/stalling
 
-AccelStepper stepper1(MOTOR_INTERFACE_TYPE, 3, 4, 5, 6);
-AccelStepper stepper2(MOTOR_INTERFACE_TYPE, 8, 9, 10, 11);
+// --- CNC SHIELD PIN DEFINITIONS ---
+#define ENABLE_PIN 8
+#define Y_STEP_PIN 3
+#define Y_DIR_PIN 6
+#define X_STEP_PIN 2
+#define X_DIR_PIN 5
 
-// --- STRAIGHT MOVEMENTS ---
-void go_forward(){
-  stepper1.setSpeed(1200);
-  stepper2.setSpeed(1200);
-}
-void go_right(){
-  stepper1.setSpeed(1200);
-  stepper2.setSpeed(-1200);
-}
-void go_left(){
-  stepper1.setSpeed(-1200);
-  stepper2.setSpeed(1200);
-}
-void go_back(){
-  stepper1.setSpeed(-1200);
-  stepper2.setSpeed(-1200);
-}
-
-// --- DIAGONAL MOVEMENTS (H-Bot Kinematics) ---
-// In an H-Bot, spinning only one motor creates 45-degree diagonal movement.
-void go_forward_right(){
-  stepper1.setSpeed(0);
-  stepper2.setSpeed(-1200);
-}
-void go_forward_left(){
-  stepper1.setSpeed(-1200);
-  stepper2.setSpeed(0);
-}
-void go_back_right(){
-  stepper1.setSpeed(1200);
-  stepper2.setSpeed(0);
-}
-void go_back_left(){
-  stepper1.setSpeed(0);
-  stepper2.setSpeed(1200);
-}
-
-void stop_motors(){
-  stepper1.setSpeed(0);
-  stepper2.setSpeed(0);
-}
+// Initialize motors
+AccelStepper stepperA(AccelStepper::DRIVER, Y_STEP_PIN, Y_DIR_PIN);
+AccelStepper stepperB(AccelStepper::DRIVER, X_STEP_PIN, X_DIR_PIN);
 
 void setup() {
-  // Start serial communication at 9600 baud
-  Serial.begin(9600); 
+  Serial.begin(9600);
+  pinMode(ENABLE_PIN, OUTPUT);
+  digitalWrite(ENABLE_PIN, LOW); // Enable drivers
+
+  stepperA.setMaxSpeed(MAX_SPEED);
+  stepperA.setAcceleration(ACCEL);
   
-  stepper1.setMaxSpeed(1200);
-  stepper2.setMaxSpeed(1200);
-  
-  // Make sure motors start completely stopped
-  stop_motors(); 
+  stepperB.setMaxSpeed(MAX_SPEED);
+  stepperB.setAcceleration(ACCEL);
+
+  Serial.println("H-Bot Test Ready. Send F, B, L, R, Q, E, Z, C, or S.");
 }
 
 void loop() {
-  // Check if the Mac has sent a command
   if (Serial.available() > 0) {
     char command = Serial.read();
-
-    // Trigger the functions based on the letter received
+    
+    // We use move() with a large number so they keep spinning 
+    // until a new command or 'S' (stop) is sent.
     switch (command) {
-      // Straight
-      case 'F': go_forward(); break;
-      case 'B': go_back(); break;
-      case 'L': go_left(); break;
-      case 'R': go_right(); break;
-      case 'S': stop_motors(); break;
+      case 'F': setTargets(10000, 10000); break;  // Forward
+      case 'B': setTargets(-10000, -10000); break; // Back
+      case 'R': setTargets(10000, -10000); break;  // Right
+      case 'L': setTargets(-10000, 10000); break;  // Left
       
-      // Diagonals
-      case 'E': go_forward_right(); break; // E is top-right of WASD
-      case 'Q': go_forward_left(); break;  // Q is top-left of WASD
-      case 'C': go_back_right(); break;    // C is bottom-right
-      case 'Z': go_back_left(); break;     // Z is bottom-left
+      case 'E': setTargets(10000, 0); break;      // Forward-Right (Motor B stays locked)
+      case 'Q': setTargets(0, 10000); break;      // Forward-Left (Motor A stays locked)
+      case 'C': setTargets(0, -10000); break;     // Back-Right
+      case 'Z': setTargets(-10000, 0); break;     // Back-Left
+      
+      case 'S': // Hard stop
+        stepperA.stop(); 
+        stepperB.stop(); 
+        break;
     }
   }
 
-  // 🔥 THIS IS THE IMPORTANT PART
-  stepper1.runSpeed();
-  stepper2.runSpeed();
+  // This handles the acceleration ramping automatically
+  stepperA.run();
+  stepperB.run();
+}
+
+void setTargets(long targetA, long targetB) {
+  // Reset positions so "10000" is always a long distance from current
+  stepperA.setCurrentPosition(0);
+  stepperB.setCurrentPosition(0);
+  stepperA.moveTo(targetA);
+  stepperB.moveTo(targetB);
 }
